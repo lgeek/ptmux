@@ -35,13 +35,10 @@
 */
 
 #define _XOPEN_SOURCE
-#include <features.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
 #include <sys/select.h>
 
 #define PT_COUNT     2
@@ -49,31 +46,53 @@
 #define BUFSIZE       255
 
 // Settings
-int pt_count;
-int default_pt;
+int pt_count = PT_COUNT;
+int default_pt = DEFAULT_PT;
+int fork_to_bg = 0;
+
+void print_syntax() {
+  printf("Usage: ptmux [OPTIONS] DEVICE\n\n");
+  printf("Valid options are:\n");
+  printf("  -b    fork to background after printing pseudoterminal pathnames\n");
+  printf("  -d    default pseudoterminal index\n");
+  printf("  -h    display this help and exit\n");
+  printf("  -n    number of pseudoterminals\n");
+}
 
 int load_settings(int argc, char **argv) {
-  if (argc < 2 || argc > 4) {
-    printf("Wrong number of command line parameters\n");
-    printf("Syntax: ptmux DEVICE [COUNT] [DEFAULT]\n");
-    exit(EXIT_FAILURE);
+  int c;
+  
+  while ((c = getopt (argc, argv, "bhd:n:")) != -1) {
+    switch (c) {
+      case 'b':
+        fork_to_bg = 1;
+        break;
+      case 'd':
+        default_pt = atoi(optarg);
+        break;
+      case 'n':
+        pt_count = atoi(optarg);
+        break;
+      case 'h':
+        print_syntax();
+        exit(EXIT_SUCCESS);
+        break;
+      case '?':
+        print_syntax();
+        // fall through
+      default:
+        exit(EXIT_FAILURE);
+    }
   }
   
-  if (argc >= 3) {
-    pt_count = atoi(argv[2]);
-  } else {
-    pt_count = PT_COUNT;
+  if ((argc - optind) != 1) {
+    print_syntax();
+    exit(EXIT_FAILURE);
   }
   
   if (pt_count <= 0) {
     printf("Error: Invalid pseudoterminal count\n");
     exit(EXIT_FAILURE);
-  }
-  
-  if (argc == 4) {
-    default_pt = atoi(argv[3]);
-  } else {
-    default_pt = DEFAULT_PT;
   }
   
   if (default_pt < 0 || default_pt >= pt_count) {
@@ -110,9 +129,9 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
   
-  source = open(argv[1], O_RDWR | O_NOCTTY | O_NONBLOCK);
+  source = open(argv[argc-1], O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (source == -1) {
-    printf("Error opening source terminal %s\n", argv[1]);
+    printf("Error opening source terminal %s\n", argv[argc-1]);
     exit(EXIT_FAILURE);
   }
 
@@ -122,6 +141,10 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
     printf("%s\n", ptname);
+  }
+
+  if (fork_to_bg && fork() != 0) {
+    exit(EXIT_SUCCESS);
   }
 
   maxfd = 0;
